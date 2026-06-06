@@ -1,0 +1,53 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model Tenant {
+  id        String   @id @default(uuid())
+  name      String
+  docType   String   // 'CNPJ' ou 'CPF'
+  doc       String   @unique
+  plan      String   // 'Anual (Enterprise)', 'Mensal (Pro)', etc
+  status    String   @default("Ativo")
+  createdAt DateTime @default(now())
+
+  users     User[]
+  apps      TenantApp[]
+}
+
+model User {
+  id        String   @id @default(uuid())
+  name      String
+  email     String   @unique
+  password  String
+  role      String   @default("USER") // 'CEO', 'ADMIN', 'USER'
+  tenantId  String?
+  createdAt DateTime @default(now())
+
+  tenant    Tenant?  @relation(fields: [tenantId], references: [id])
+}
+
+model App {
+  id          String   @id @default(uuid())
+  name        String   @unique // ex: 'Mabon', 'SoySim AI', 'StitsPay'
+  description String?
+  category    String?
+
+  tenants     TenantApp[]
+}
+
+// Tabela de relacionamento: Quais Tenants têm acesso a quais Apps
+model TenantApp {
+  tenantId String
+  appId    String
+
+  tenant   Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  app      App    @relation(fields: [appId], references: [id], onDelete: Cascade)
+
+  @@id([tenantId, appId])
+}
