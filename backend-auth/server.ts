@@ -140,6 +140,42 @@ const authMiddleware = (req: any, res: any, next: any) => {
   }
 };
 
+// 1.8 Rotas de Gerenciamento de Apps (Vitrine Dinâmica)
+app.get('/api/apps', authMiddleware, async (req: any, res: any) => {
+  try {
+    const apps = await prisma.app.findMany({
+      where: { isActive: true }
+    });
+    res.json(apps);
+  } catch (error) {
+    res.status(500).json({ error: 'Erro ao buscar aplicativos' });
+  }
+});
+
+app.post('/api/apps', authMiddleware, async (req: any, res: any) => {
+  if (req.user.role !== 'CEO') return res.status(403).json({ error: 'Acesso negado' });
+  try {
+    const data = req.body;
+    const newApp = await prisma.app.create({ data });
+    res.status(201).json(newApp);
+  } catch (error) {
+    res.status(500).json({ error: 'Erro ao criar aplicativo' });
+  }
+});
+
+app.put('/api/apps/:id', authMiddleware, async (req: any, res: any) => {
+  if (req.user.role !== 'CEO') return res.status(403).json({ error: 'Acesso negado' });
+  try {
+    const updated = await prisma.app.update({
+      where: { id: req.params.id },
+      data: req.body
+    });
+    res.json(updated);
+  } catch (error) {
+    res.status(500).json({ error: 'Erro ao atualizar aplicativo' });
+  }
+});
+
 // 2. Rota para o CEO listar todos os Tenants (Dashboard Administrativo)
 app.get('/api/tenants', authMiddleware, async (req: any, res: any) => {
   if (req.user.role !== 'CEO') {

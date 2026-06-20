@@ -33,12 +33,20 @@ model User {
 }
 
 model App {
-  id          String   @id @default(uuid())
-  name        String   @unique // ex: 'Mabon', 'SoySim AI', 'StitsPay'
-  description String?
-  category    String?
+  id            String   @id @default(uuid())
+  name          String   @unique // ex: 'Mabon', 'SoySim AI', 'StitsPay'
+  description   String?
+  category      String?
+  
+  // Novos campos dinâmicos adicionados para a Vitrine Data-Driven
+  productionUrl String?  @map("production_url")
+  iconName      String?  @default("Globe") @map("icon_name")
+  textColor     String?  @default("text-slate-600") @map("text_color")
+  bgColor       String?  @default("bg-slate-100") @map("bg_color")
+  isHidden      Boolean  @default(false) @map("is_hidden")
+  isActive      Boolean  @default(true) @map("is_active")
 
-  tenants     TenantApp[]
+  tenants       TenantApp[]
 }
 
 // Tabela de relacionamento: Quais Tenants têm acesso a quais Apps
