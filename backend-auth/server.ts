@@ -64,7 +64,9 @@ app.post('/api/auth/login', loginLimiter, async (req, res) => {
     // Gera o Token JWT
     const token = jwt.sign(
       { 
-        userId: user.id, 
+        userId: user.id,
+        sub: user.id,
+        email: user.email,
         role: user.role, 
         tenantId: user.tenantId,
         accessibleApps 
