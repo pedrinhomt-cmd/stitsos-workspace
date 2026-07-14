@@ -18,6 +18,7 @@ app.use(cors({
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
   allowedHeaders: ['Content-Type', 'Authorization']
 }));
+app.options('*', cors()); // Força o Express a responder OPTIONS com 204
 app.use(express.json());
 
 // Limite de Requisições (Anti Brute-Force)
