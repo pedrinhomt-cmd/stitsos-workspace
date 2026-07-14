@@ -12,8 +12,12 @@ const PORT = process.env.PORT || 3003;
 const JWT_SECRET = process.env.JWT_SECRET || 'stits-super-secret-key-2026';
 
 // Proteções de Segurança Enterprise
-app.use(helmet()); // Blindagem de Headers HTTP
-app.use(cors());
+app.use(helmet({ crossOriginResourcePolicy: false })); // Permite CORS cross-origin
+app.use(cors({
+  origin: '*', // Permite de qualquer site (GestorNex)
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization']
+}));
 app.use(express.json());
 
 // Limite de Requisições (Anti Brute-Force)
