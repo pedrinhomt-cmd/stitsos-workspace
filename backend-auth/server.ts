@@ -35,7 +35,7 @@ app.post('/api/auth/login', loginLimiter, async (req, res) => {
     const password = req.body.password?.trim();
     
     // Busca usuário e inclui o tenant e os apps que ele tem acesso
-    const user = await prisma.user.findUnique({
+    let user = await prisma.user.findUnique({
       where: { email },
       include: {
         tenant: {
@@ -48,13 +48,27 @@ app.post('/api/auth/login', loginLimiter, async (req, res) => {
       }
     });
 
+    // Auto-cadastro: se o usuário não for achado, criamos na hora (lógica do legado GestorNex)
     if (!user) {
-      return res.status(401).json({ error: 'Credenciais inválidas' });
-    }
-
-    const validPassword = await bcrypt.compare(password, user.password);
-    if (!validPassword) {
-      return res.status(401).json({ error: 'Credenciais inválidas' });
+      const hashedPassword = await bcrypt.hash(password, 10);
+      user = await prisma.user.create({
+        data: {
+          name: email.split('@')[0], // Nome genérico a partir do e-mail
+          email: email,
+          password: hashedPassword,
+          role: 'USER'
+        },
+        include: {
+          tenant: {
+            include: { apps: { include: { app: true } } }
+          }
+        }
+      });
+    } else {
+      const validPassword = await bcrypt.compare(password, user.password);
+      if (!validPassword) {
+        return res.status(401).json({ error: 'Credenciais inválidas' });
+      }
     }
 
     // Se o usuário for CEO (não tem tenant específico, vê todos)
