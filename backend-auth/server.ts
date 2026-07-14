@@ -147,6 +147,30 @@ const authMiddleware = (req: any, res: any, next: any) => {
   }
 };
 
+// 1.6 Endpoint de Alteração de Senha
+app.put('/api/auth/password', authMiddleware, async (req: any, res: any) => {
+  try {
+    const userId = req.user.userId;
+    const { newPassword } = req.body;
+    
+    if (!newPassword || newPassword.length < 6) {
+      return res.status(400).json({ error: 'A nova senha deve ter no mínimo 6 caracteres.' });
+    }
+
+    const hashedPassword = await bcrypt.hash(newPassword, 10);
+
+    await prisma.user.update({
+      where: { id: userId },
+      data: { password: hashedPassword }
+    });
+
+    res.json({ message: 'Senha atualizada com sucesso!' });
+  } catch (error) {
+    console.error('Erro ao atualizar senha:', error);
+    res.status(500).json({ error: 'Erro interno do servidor ao atualizar a senha.' });
+  }
+});
+
 // 1.8 Rotas de Gerenciamento de Apps (Vitrine Dinâmica)
 app.get('/api/apps', authMiddleware, async (req: any, res: any) => {
   try {
