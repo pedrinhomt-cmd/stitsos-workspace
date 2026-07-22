@@ -21,15 +21,18 @@ model Tenant {
 }
 
 model User {
-  id        String   @id @default(uuid())
-  name      String
-  email     String   @unique
-  password  String
-  role      String   @default("USER") // 'CEO', 'ADMIN', 'USER'
-  tenantId  String?
-  createdAt DateTime @default(now())
+  id                String    @id @default(uuid())
+  name              String
+  email             String    @unique
+  recoveryEmail     String?   @unique
+  password          String
+  role              String    @default("USER") // 'CEO', 'ADMIN', 'USER'
+  tenantId          String?
+  resetToken        String?   @unique
+  resetTokenExpires DateTime?
+  createdAt         DateTime  @default(now())
 
-  tenant    Tenant?  @relation(fields: [tenantId], references: [id])
+  tenant            Tenant?   @relation(fields: [tenantId], references: [id])
 }
 
 model App {

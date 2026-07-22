@@ -5,6 +5,11 @@ import bcrypt from 'bcryptjs';
 import helmet from 'helmet';
 import rateLimit from 'express-rate-limit';
 import { PrismaClient } from '@prisma/client';
+import crypto from 'crypto';
+import { Resend } from 'resend';
+
+const resend = new Resend(process.env.RESEND_API_KEY || 're_YxZ9y82M_95rZ1qG6M3qWc3Kx2Lp5J67r'); // Substituir pela chave correta
+
 
 const app = express();
 const prisma = new PrismaClient();
@@ -170,6 +175,145 @@ app.put('/api/auth/password', authMiddleware, async (req: any, res: any) => {
     res.status(500).json({ error: 'Erro interno do servidor ao atualizar a senha.' });
   }
 });
+
+// 1.7.1 Solicitacao de Recuperacao de Senha (Forgot Password)
+app.post('/api/auth/forgot-password', async (req, res) => {
+  try {
+    const { email } = req.body;
+    if (!email) return res.status(400).json({ error: 'E-mail é obrigatório.' });
+
+    // Busca o usuário pelo e-mail principal OU pelo e-mail de recuperação
+    const user = await prisma.user.findFirst({
+      where: {
+        OR: [
+          { email: email },
+          { recoveryEmail: email }
+        ]
+      }
+    });
+
+    if (!user) {
+      // Retorna sucesso de forma genérica para evitar enumeração de contas (Segurança)
+      return res.json({ message: 'Se o e-mail existir, um link de recuperação foi enviado.' });
+    }
+
+    // Gera um token aleatório único
+    const resetToken = crypto.randomBytes(32).toString('hex');
+    const resetTokenExpires = new Date(Date.now() + 3600000); // 1 hora de validade
+
+    await prisma.user.update({
+      where: { id: user.id },
+      data: {
+        resetToken,
+        resetTokenExpires
+      }
+    });
+
+    // Envia o e-mail (mockado por enquanto)
+    const resetLink = `https://gestornex.com.br/reset-password?token=${resetToken}`;
+    
+    // Tentativa de envio com Resend (em produção precisará de um domínio verificado ou enviar para onbording)
+    try {
+      await resend.emails.send({
+        from: 'Gestor-Nex <onboarding@resend.dev>',
+        to: email, // O e-mail que o usuário digitou (pode ser o principal ou o de recuperação)
+        subject: 'Recuperação de Senha - GestorNex',
+        html: `<p>Olá, ${user.name}</p>
+               <p>Você solicitou a recuperação da sua senha.</p>
+               <p>Clique no link abaixo para criar uma nova senha:</p>
+               <a href="${resetLink}">Resetar minha senha</a>
+               <p>Este link expira em 1 hora.</p>`
+      });
+    } catch (e) {
+      console.error("Erro ao enviar email pelo resend:", e);
+    }
+
+    // No console também logamos o token para ajudar caso a conta do resend seja restrita (onboarding mode)
+    console.log(`[RECOVERY] E-mail de reset enviado para ${email}. Token: ${resetToken}`);
+
+    res.json({ message: 'Se o e-mail existir, um link de recuperação foi enviado.' });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ error: 'Erro interno ao processar a recuperação.' });
+  }
+});
+
+// 1.7.2 Resetar a Senha (Usando o Token)
+app.post('/api/auth/reset-password', async (req, res) => {
+  try {
+    const { token, newPassword } = req.body;
+    if (!token || !newPassword || newPassword.length < 6) {
+      return res.status(400).json({ error: 'Token inválido ou senha muito curta.' });
+    }
+
+    const user = await prisma.user.findFirst({
+      where: {
+        resetToken: token,
+        resetTokenExpires: { gt: new Date() } // Token ainda não expirou
+      }
+    });
+
+    if (!user) {
+      return res.status(400).json({ error: 'Link de recuperação inválido ou expirado.' });
+    }
+
+    const hashedPassword = await bcrypt.hash(newPassword, 10);
+
+    await prisma.user.update({
+      where: { id: user.id },
+      data: {
+        password: hashedPassword,
+        resetToken: null,
+        resetTokenExpires: null
+      }
+    });
+
+    res.json({ message: 'Sua senha foi redefinida com sucesso! Você já pode fazer login.' });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ error: 'Erro interno ao redefinir a senha.' });
+  }
+});
+
+// 1.7.3 Gerenciar E-mails (Principal e Recuperação)
+app.put('/api/auth/profile/emails', authMiddleware, async (req: any, res: any) => {
+  try {
+    const userId = req.user.userId;
+    const { email, recoveryEmail } = req.body;
+    
+    if (!email) {
+      return res.status(400).json({ error: 'O e-mail principal é obrigatório.' });
+    }
+
+    // Verificar se o novo e-mail principal já está em uso por outro usuário
+    const existingEmail = await prisma.user.findUnique({ where: { email } });
+    if (existingEmail && existingEmail.id !== userId) {
+      return res.status(400).json({ error: 'Este e-mail principal já está em uso por outra conta.' });
+    }
+
+    // Verificar se o novo e-mail de recuperação já está em uso
+    if (recoveryEmail) {
+      const existingRecovery = await prisma.user.findFirst({ where: { recoveryEmail } });
+      if (existingRecovery && existingRecovery.id !== userId) {
+        return res.status(400).json({ error: 'Este e-mail de recuperação já está associado a outra conta.' });
+      }
+    }
+
+    await prisma.user.update({
+      where: { id: userId },
+      data: { 
+        email,
+        recoveryEmail: recoveryEmail || null
+      }
+    });
+
+    res.json({ message: 'Preferências de e-mail atualizadas com sucesso!' });
+  } catch (error) {
+    console.error('Erro ao atualizar e-mails:', error);
+    res.status(500).json({ error: 'Erro interno do servidor ao atualizar e-mails.' });
+  }
+});
+
 
 // 1.8 Rotas de Gerenciamento de Apps (Vitrine Dinâmica)
 app.get('/api/apps', authMiddleware, async (req: any, res: any) => {
