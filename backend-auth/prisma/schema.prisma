@@ -24,6 +24,7 @@ model User {
   id                String    @id @default(uuid())
   name              String
   email             String    @unique
+  whatsapp          String?
   recoveryEmail     String?   @unique
   password          String
   role              String    @default("USER") // 'CEO', 'ADMIN', 'USER'

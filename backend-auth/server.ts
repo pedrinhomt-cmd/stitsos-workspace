@@ -109,7 +109,7 @@ app.post('/api/auth/login', loginLimiter, async (req, res) => {
 // 1.5 Endpoint de Cadastro (Register)
 app.post('/api/auth/register', async (req, res) => {
   try {
-    const { name, email, password } = req.body;
+    const { name, email, password, whatsapp } = req.body;
     
     if (!name || !email || !password) {
       return res.status(400).json({ error: 'Nome, email e senha são obrigatórios.' });
@@ -126,6 +126,7 @@ app.post('/api/auth/register', async (req, res) => {
       data: {
         name,
         email,
+        whatsapp,
         password: hashedPassword,
         role: 'USER'
       }
@@ -179,7 +180,7 @@ app.put('/api/auth/password', authMiddleware, async (req: any, res: any) => {
 // 1.7.1 Solicitacao de Recuperacao de Senha (Forgot Password)
 app.post('/api/auth/forgot-password', async (req, res) => {
   try {
-    const { email } = req.body;
+    const { email, channel } = req.body;
     if (!email) return res.status(400).json({ error: 'E-mail é obrigatório.' });
 
     // Busca o usuário pelo e-mail principal OU pelo e-mail de recuperação
@@ -194,7 +195,11 @@ app.post('/api/auth/forgot-password', async (req, res) => {
 
     if (!user) {
       // Retorna sucesso de forma genérica para evitar enumeração de contas (Segurança)
-      return res.json({ message: 'Se o e-mail existir, um link de recuperação foi enviado.' });
+      return res.json({ message: 'Se a conta existir, um link de recuperação foi enviado.' });
+    }
+
+    if (channel === 'WHATSAPP' && !user.whatsapp) {
+      return res.status(400).json({ error: 'Não há um número de WhatsApp cadastrado para esta conta.' });
     }
 
     // Gera um token aleatório único
@@ -209,29 +214,50 @@ app.post('/api/auth/forgot-password', async (req, res) => {
       }
     });
 
-    // Envia o e-mail (mockado por enquanto)
+    // Envia o link
     const resetLink = `https://gestornex.com.br/reset-password?token=${resetToken}`;
     
-    // Tentativa de envio com Resend (em produção precisará de um domínio verificado ou enviar para onbording)
-    try {
-      await resend.emails.send({
-        from: 'Gestor-Nex <onboarding@resend.dev>',
-        to: email, // O e-mail que o usuário digitou (pode ser o principal ou o de recuperação)
-        subject: 'Recuperação de Senha - GestorNex',
-        html: `<p>Olá, ${user.name}</p>
-               <p>Você solicitou a recuperação da sua senha.</p>
-               <p>Clique no link abaixo para criar uma nova senha:</p>
-               <a href="${resetLink}">Resetar minha senha</a>
-               <p>Este link expira em 1 hora.</p>`
-      });
-    } catch (e) {
-      console.error("Erro ao enviar email pelo resend:", e);
+    if (channel === 'WHATSAPP') {
+      try {
+        const evoUrl = process.env.EVOLUTION_API_URL || 'http://localhost:8080';
+        const evoInstance = process.env.EVOLUTION_API_INSTANCE || 'Evolution';
+        const evoToken = process.env.EVOLUTION_API_TOKEN || '';
+        
+        await fetch(`${evoUrl}/message/sendText/${evoInstance}`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'apikey': evoToken
+          },
+          body: JSON.stringify({
+            number: user.whatsapp,
+            text: `Olá ${user.name},\n\nVocê solicitou a recuperação da sua senha no StitsOS.\n\nAcesse o link abaixo para criar uma nova senha:\n${resetLink}\n\nEste link expira em 1 hora.`
+          })
+        });
+      } catch (e) {
+        console.error("Erro ao enviar whatsapp pela Evolution API:", e);
+      }
+      console.log(`[RECOVERY] WhatsApp de reset enviado para ${user.whatsapp}. Token: ${resetToken}`);
+    } else {
+      // Tentativa de envio com Resend (em produção precisará de um domínio verificado ou enviar para onbording)
+      try {
+        await resend.emails.send({
+          from: 'Gestor-Nex <onboarding@resend.dev>',
+          to: email, // O e-mail que o usuário digitou (pode ser o principal ou o de recuperação)
+          subject: 'Recuperação de Senha - GestorNex',
+          html: `<p>Olá, ${user.name}</p>
+                 <p>Você solicitou a recuperação da sua senha.</p>
+                 <p>Clique no link abaixo para criar uma nova senha:</p>
+                 <a href="${resetLink}">Resetar minha senha</a>
+                 <p>Este link expira em 1 hora.</p>`
+        });
+      } catch (e) {
+        console.error("Erro ao enviar email pelo resend:", e);
+      }
+      console.log(`[RECOVERY] E-mail de reset enviado para ${email}. Token: ${resetToken}`);
     }
 
-    // No console também logamos o token para ajudar caso a conta do resend seja restrita (onboarding mode)
-    console.log(`[RECOVERY] E-mail de reset enviado para ${email}. Token: ${resetToken}`);
-
-    res.json({ message: 'Se o e-mail existir, um link de recuperação foi enviado.' });
+    res.json({ message: 'Se a conta existir, um link de recuperação foi enviado.' });
   } catch (error) {
     console.error(error);
     res.status(500).json({ error: 'Erro interno ao processar a recuperação.' });
