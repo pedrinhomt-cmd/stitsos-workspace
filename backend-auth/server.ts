@@ -63,16 +63,24 @@ app.post('/api/auth/login', loginLimiter, async (req, res) => {
     }
 
     let accessibleApps: string[] = [];
+    let accessibleAppsData: { name: string, url: string }[] = [];
+
     if (user.role === 'CEO') {
       const allApps = await prisma.app.findMany();
       accessibleApps = allApps.map(a => a.name);
+      accessibleAppsData = allApps.map(a => ({ name: a.name, url: a.productionUrl || '' }));
     } else if (user.tenant) {
       accessibleApps = user.tenant.apps.map(ta => ta.app.name);
+      accessibleAppsData = user.tenant.apps.map(ta => ({ name: ta.app.name, url: ta.app.productionUrl || '' }));
     }
 
     // Por padrão, libera acesso ao GestorNex para todos os usuários cadastrados
     if (!accessibleApps.includes('GestorNex')) {
+      const gestorNexApp = await prisma.app.findFirst({ where: { name: 'GestorNex' } });
       accessibleApps.push('GestorNex');
+      if (gestorNexApp) {
+        accessibleAppsData.push({ name: 'GestorNex', url: gestorNexApp.productionUrl || '' });
+      }
     }
 
     // Gera o Token JWT
@@ -100,7 +108,8 @@ app.post('/api/auth/login', loginLimiter, async (req, res) => {
           name: user.tenant.name,
           plan: user.tenant.plan
         } : null,
-        accessibleApps
+        accessibleApps,
+        accessibleAppsData
       }
     });
 
@@ -113,7 +122,7 @@ app.post('/api/auth/login', loginLimiter, async (req, res) => {
 // 1.5 Endpoint de Cadastro (Register)
 app.post('/api/auth/register', async (req, res) => {
   try {
-    const { name, email, password, whatsapp } = req.body;
+    const { name, email, password, whatsapp, source } = req.body;
     
     if (!name || !email || !password) {
       return res.status(400).json({ error: 'Nome, email e senha são obrigatórios.' });
@@ -126,17 +135,106 @@ app.post('/api/auth/register', async (req, res) => {
 
     const hashedPassword = await bcrypt.hash(password, 10);
 
+    let tenantId = null;
+    let targetApp = null;
+    let allApps = [];
+
+    const fs = require('fs');
+    fs.writeFileSync('/var/www/stitsos-workspace/backend-auth/debug.txt', `[DEBUG REGISTER GLOBAL]\nEmail: ${email}\nSource recebido bruto: "${source}"\nData: ${new Date().toISOString()}\n`);
+
+    // Auto-provisionamento de Tenant se a origem (source) for um App
+    if (source && source !== 'SSO_PORTAL') {
+      allApps = await prisma.app.findMany();
+      targetApp = allApps.find(a => a.name.toLowerCase().trim() === String(source).toLowerCase().trim());
+      
+      fs.appendFileSync('/var/www/stitsos-workspace/backend-auth/debug.txt', `Apps no banco: ${allApps.map(a => a.name).join(', ')}\nApp encontrado: ${targetApp ? targetApp.name : 'NENHUM'}\n`);
+      
+      if (targetApp) {
+        const autoTenant = await prisma.tenant.create({
+          data: {
+            name: `Empresa de ${name.split(' ')[0]}`,
+            docType: 'AUTO',
+            doc: `AUTO_${Date.now()}_${Math.floor(Math.random()*1000)}`,
+            plan: 'Gratuito',
+            status: 'Ativo',
+            apps: {
+              create: [
+                { appId: targetApp.id }
+              ]
+            }
+          }
+        });
+        tenantId = autoTenant.id;
+        console.log(`[AUTO-PROVISION] Tenant '${autoTenant.name}' criado e vinculado ao app ${targetApp.name} para o usuário ${email}`);
+      }
+    }
+
     const user = await prisma.user.create({
       data: {
         name,
         email,
         whatsapp,
         password: hashedPassword,
-        role: 'USER'
+        role: 'USER',
+        tenantId: tenantId
+      },
+      include: {
+        tenant: {
+          include: {
+            apps: {
+              include: { app: true }
+            }
+          }
+        }
       }
     });
 
-    res.status(201).json({ message: 'Usuário cadastrado com sucesso!', userId: user.id });
+    let accessibleApps: string[] = [];
+    let accessibleAppsData: { name: string, url: string }[] = [];
+
+    if (user.tenant) {
+      accessibleApps = user.tenant.apps.map(ta => ta.app.name);
+      accessibleAppsData = user.tenant.apps.map(ta => ({ name: ta.app.name, url: ta.app.productionUrl || '' }));
+    }
+
+    // Por padrão, libera acesso ao GestorNex para todos os usuários cadastrados
+    if (!accessibleApps.includes('GestorNex')) {
+      const gestorNexApp = await prisma.app.findFirst({ where: { name: 'GestorNex' } });
+      accessibleApps.push('GestorNex');
+      if (gestorNexApp) {
+        accessibleAppsData.push({ name: 'GestorNex', url: gestorNexApp.productionUrl || '' });
+      }
+    }
+
+    const token = jwt.sign(
+      { 
+        userId: user.id,
+        sub: user.id,
+        email: user.email,
+        role: user.role, 
+        tenantId: user.tenantId,
+        accessibleApps 
+      }, 
+      JWT_SECRET, 
+      { expiresIn: '24h' }
+    );
+
+    res.status(201).json({
+      message: 'Usuário cadastrado com sucesso!',
+      token,
+      user: {
+        id: user.id,
+        name: user.name,
+        email: user.email,
+        role: user.role,
+        tenant: user.tenant ? {
+          name: user.tenant.name,
+          plan: user.tenant.plan
+        } : null,
+        accessibleApps,
+        accessibleAppsData
+      }
+    });
   } catch (error) {
     console.error(error);
     res.status(500).json({ error: 'Erro interno do servidor ao registrar usuário' });
