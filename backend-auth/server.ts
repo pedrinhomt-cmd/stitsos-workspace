@@ -139,15 +139,10 @@ app.post('/api/auth/register', async (req, res) => {
     let targetApp = null;
     let allApps = [];
 
-    const fs = require('fs');
-    fs.writeFileSync('/var/www/stitsos-workspace/backend-auth/debug.txt', `[DEBUG REGISTER GLOBAL]\nEmail: ${email}\nSource recebido bruto: "${source}"\nData: ${new Date().toISOString()}\n`);
-
     // Auto-provisionamento de Tenant se a origem (source) for um App
     if (source && source !== 'SSO_PORTAL') {
       allApps = await prisma.app.findMany();
       targetApp = allApps.find(a => a.name.toLowerCase().trim() === String(source).toLowerCase().trim());
-      
-      fs.appendFileSync('/var/www/stitsos-workspace/backend-auth/debug.txt', `Apps no banco: ${allApps.map(a => a.name).join(', ')}\nApp encontrado: ${targetApp ? targetApp.name : 'NENHUM'}\n`);
       
       if (targetApp) {
         const autoTenant = await prisma.tenant.create({
