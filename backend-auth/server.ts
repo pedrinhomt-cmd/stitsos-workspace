@@ -243,10 +243,10 @@ app.post('/api/auth/forgot-password', async (req, res) => {
       }
       console.log(`[RECOVERY] WhatsApp de reset enviado para ${user.whatsapp}. Token: ${resetToken}`);
     } else {
-      // Tentativa de envio com Resend (em produção precisará de um domínio verificado ou enviar para onbording)
+      // Envio de e-mail usando o domínio verificado
       try {
         await resend.emails.send({
-          from: 'Gestor-Nex <onboarding@resend.dev>',
+          from: 'Gestor-Nex <suporte@gestornex.fidycard.com.br>',
           to: email, // O e-mail que o usuário digitou (pode ser o principal ou o de recuperação)
           subject: 'Recuperação de Senha - GestorNex',
           html: `<p>Olá, ${user.name}</p>
