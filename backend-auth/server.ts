@@ -62,13 +62,17 @@ app.post('/api/auth/login', loginLimiter, async (req, res) => {
       return res.status(401).json({ error: 'Credenciais inválidas' });
     }
 
-    // Se o usuário for CEO (não tem tenant específico, vê todos)
     let accessibleApps: string[] = [];
     if (user.role === 'CEO') {
       const allApps = await prisma.app.findMany();
       accessibleApps = allApps.map(a => a.name);
     } else if (user.tenant) {
       accessibleApps = user.tenant.apps.map(ta => ta.app.name);
+    }
+
+    // Por padrão, libera acesso ao GestorNex para todos os usuários cadastrados
+    if (!accessibleApps.includes('GestorNex')) {
+      accessibleApps.push('GestorNex');
     }
 
     // Gera o Token JWT
