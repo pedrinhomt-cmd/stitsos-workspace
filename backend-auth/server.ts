@@ -6,10 +6,9 @@ import helmet from 'helmet';
 import rateLimit from 'express-rate-limit';
 import { PrismaClient } from '@prisma/client';
 import crypto from 'crypto';
-import { Resend } from 'resend';
+import { NotificationService } from './src/services/NotificationService';
 
-const resend = new Resend(process.env.RESEND_API_KEY || 're_YxZ9y82M_95rZ1qG6M3qWc3Kx2Lp5J67r'); // Substituir pela chave correta
-
+const notificationService = new NotificationService();
 
 const app = express();
 const prisma = new PrismaClient();
@@ -315,43 +314,10 @@ app.post('/api/auth/forgot-password', async (req, res) => {
     const resetLink = `https://gestornex.com.br/reset-password?token=${resetToken}`;
     
     if (channel === 'WHATSAPP') {
-      try {
-        const evoUrl = process.env.EVOLUTION_API_URL || 'http://localhost:8080';
-        const evoInstance = process.env.EVOLUTION_API_INSTANCE || 'Evolution';
-        const evoToken = process.env.EVOLUTION_API_TOKEN || '';
-        
-        await fetch(`${evoUrl}/message/sendText/${evoInstance}`, {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'apikey': evoToken
-          },
-          body: JSON.stringify({
-            number: user.whatsapp,
-            text: `Olá ${user.name},\n\nVocê solicitou a recuperação da sua senha no StitsOS.\n\nAcesse o link abaixo para criar uma nova senha:\n${resetLink}\n\nEste link expira em 1 hora.`
-          })
-        });
-      } catch (e) {
-        console.error("Erro ao enviar whatsapp pela Evolution API:", e);
-      }
-      console.log(`[RECOVERY] WhatsApp de reset enviado para ${user.whatsapp}. Token: ${resetToken}`);
+      const msg = `Olá ${user.name},\n\nVocê solicitou a recuperação da sua senha no StitsOS.\n\nAcesse o link abaixo para criar uma nova senha:\n${resetLink}\n\nEste link expira em 1 hora.`;
+      await notificationService.sendWhatsApp(user.whatsapp!, msg);
     } else {
-      // Envio de e-mail usando o domínio verificado
-      try {
-        await resend.emails.send({
-          from: 'Gestor-Nex <suporte@gestornex.fidycard.com.br>',
-          to: email, // O e-mail que o usuário digitou (pode ser o principal ou o de recuperação)
-          subject: 'Recuperação de Senha - GestorNex',
-          html: `<p>Olá, ${user.name}</p>
-                 <p>Você solicitou a recuperação da sua senha.</p>
-                 <p>Clique no link abaixo para criar uma nova senha:</p>
-                 <a href="${resetLink}">Resetar minha senha</a>
-                 <p>Este link expira em 1 hora.</p>`
-        });
-      } catch (e) {
-        console.error("Erro ao enviar email pelo resend:", e);
-      }
-      console.log(`[RECOVERY] E-mail de reset enviado para ${email}. Token: ${resetToken}`);
+      await notificationService.sendRecoveryEmail(email, user.name, resetLink);
     }
 
     res.json({ message: 'Se a conta existir, um link de recuperação foi enviado.' });
