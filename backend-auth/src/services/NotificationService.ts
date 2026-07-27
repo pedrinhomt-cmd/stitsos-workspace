@@ -25,7 +25,12 @@ export class NotificationService {
 
     try {
       // A Evolution API exige que o número venha formatado com o DDI (ex: 5511999999999)
-      const cleanNumber = number.replace(/\D/g, ''); 
+      let cleanNumber = number.replace(/\D/g, ''); 
+      
+      // Se o número tiver 10 ou 11 dígitos (padrão Brasil sem DDI), adicionamos o 55
+      if (cleanNumber.length === 10 || cleanNumber.length === 11) {
+        cleanNumber = `55${cleanNumber}`;
+      }
 
       const endpoint = `${this.evoUrl}/message/sendText/${this.evoInstance}`;
       console.log(`[WhatsApp] Tentando enviar mensagem para ${cleanNumber} via ${endpoint}...`);
@@ -50,7 +55,7 @@ export class NotificationService {
       const responseData = await response.json();
 
       if (!response.ok) {
-        console.error(`❌ [WhatsApp] Erro na resposta da Evolution API:`, responseData);
+        console.error(`❌ [WhatsApp] Erro na resposta da Evolution API:`, JSON.stringify(responseData, null, 2));
         return false;
       }
 
