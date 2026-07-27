@@ -7,7 +7,7 @@ export class NotificationService {
   private evoToken: string;
 
   constructor() {
-    this.resend = new Resend(process.env.RESEND_API_KEY || 're_YxZ9y82M_95rZ1qG6M3qWc3Kx2Lp5J67r');
+    this.resend = new Resend(process.env.RESEND_API_KEY);
     this.evoUrl = process.env.EVOLUTION_API_URL || '';
     this.evoInstance = process.env.EVOLUTION_API_INSTANCE || '';
     this.evoToken = process.env.EVOLUTION_API_TOKEN || '';
@@ -79,6 +79,27 @@ export class NotificationService {
                <p>Este link expira em 1 hora.</p>`
       });
       console.log(`✅ [E-mail] Link de reset enviado para ${email}.`);
+      return true;
+    } catch (e: any) {
+      console.error("❌ [E-mail] Erro ao enviar pelo Resend:", e.message);
+      return false;
+    }
+  }
+  /**
+   * Envia um e-mail genérico, permitindo personalizar o remetente (appName)
+   */
+  async sendGenericEmail(to: string, subject: string, html: string, appName?: string, appEmail?: string): Promise<boolean> {
+    try {
+      const fromName = appName || 'StitsOS Hub';
+      const fromEmail = appEmail || 'suporte@gestornex.fidycard.com.br';
+      
+      await this.resend.emails.send({
+        from: `${fromName} <${fromEmail}>`,
+        to: to,
+        subject: subject,
+        html: html
+      });
+      console.log(`✅ [E-mail] Notificação de '${fromName}' enviada para ${to}.`);
       return true;
     } catch (e: any) {
       console.error("❌ [E-mail] Erro ao enviar pelo Resend:", e.message);

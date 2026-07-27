@@ -404,7 +404,46 @@ app.put('/api/auth/profile/emails', authMiddleware, async (req: any, res: any) =
 });
 
 
-// 1.8 Rotas de Gerenciamento de Apps (Vitrine Dinâmica)
+// 1.8 Notificações Centralizadas (SSO Hub)
+app.post('/api/notify', async (req: any, res: any) => {
+  try {
+    const { to, channel, subject, message, html, appName, appEmail } = req.body;
+    
+    // Autenticação simples por chave de API interna
+    const authHeader = req.headers.authorization;
+    const internalKey = process.env.INTERNAL_API_KEY || 'dev_secret_key';
+    
+    if (authHeader !== `Bearer ${internalKey}`) {
+      return res.status(401).json({ error: 'Acesso não autorizado ao Hub de Notificações.' });
+    }
+
+    if (!to || !channel) {
+      return res.status(400).json({ error: 'Os campos "to" e "channel" são obrigatórios.' });
+    }
+
+    let success = false;
+
+    if (channel === 'email') {
+      success = await notificationService.sendGenericEmail(to, subject || 'Notificação', html || message, appName, appEmail);
+    } else if (channel === 'whatsapp') {
+      success = await notificationService.sendWhatsApp(to, message || '');
+    } else {
+      return res.status(400).json({ error: 'Canal inválido. Use "email" ou "whatsapp".' });
+    }
+
+    if (success) {
+      return res.json({ message: 'Notificação despachada com sucesso pelo StitsOS Hub.' });
+    } else {
+      return res.status(500).json({ error: 'Ocorreu um erro no provedor de envio (Resend/Evolution).' });
+    }
+  } catch (error) {
+    console.error('Erro no endpoint /api/notify:', error);
+    res.status(500).json({ error: 'Erro interno ao processar a notificação.' });
+  }
+});
+
+
+// 1.9 Rotas de Gerenciamento de Apps (Vitrine Dinâmica)
 app.get('/api/apps', authMiddleware, async (req: any, res: any) => {
   try {
     const apps = await prisma.app.findMany({
