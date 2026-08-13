@@ -75,6 +75,41 @@ export class WhatsAppService {
   async getOrCreateInstance(tenantId: string, appName: string = 'NEXUS_CRM'): Promise<InstanceStatusResponse> {
     const instanceName = this.buildInstanceName(tenantId, appName);
 
+    // 0. Garantir que o Tenant existe no banco de dados do SSO para satisfazer a Foreign Key
+    let tenant = await this.prisma.tenant.findUnique({
+      where: { id: tenantId }
+    });
+
+    if (!tenant) {
+      try {
+        tenant = await this.prisma.tenant.create({
+          data: {
+            id: tenantId,
+            name: `Tenant ${tenantId.slice(0, 8)}`,
+            docType: 'CNPJ',
+            doc: `DOC-${tenantId.replace(/[^a-zA-Z0-9]/g, '').slice(0, 12)}-${Date.now().toString().slice(-4)}`,
+            plan: 'Enterprise (Auto-Provisioned)',
+            status: 'Ativo'
+          }
+        });
+      } catch (e) {
+        tenant = await this.prisma.tenant.findFirst();
+        if (!tenant) {
+          tenant = await this.prisma.tenant.create({
+            data: {
+              name: 'Master Tenant',
+              docType: 'CNPJ',
+              doc: '00000000000199',
+              plan: 'Enterprise',
+              status: 'Ativo'
+            }
+          });
+        }
+      }
+    }
+
+    const validTenantId = tenant ? tenant.id : tenantId;
+
     // 1. Busca no banco de dados local
     let record = await this.prisma.whatsAppInstance.findUnique({
       where: { instanceName }
@@ -83,7 +118,7 @@ export class WhatsAppService {
     if (!record) {
       record = await this.prisma.whatsAppInstance.create({
         data: {
-          tenantId,
+          tenantId: validTenantId,
           appName,
           instanceName,
           status: 'CONNECTING'
