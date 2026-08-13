@@ -93,8 +93,6 @@ export class WhatsAppService {
 
     // 2. Tenta criar na Evolution API (caso ainda não exista lá)
     try {
-      const webhookUrl = `${this.webhookBaseUrl}?instance=${instanceName}&tenantId=${tenantId}&app=${appName}`;
-      
       const createResponse = await fetch(`${this.evoUrl}/instance/create`, {
         method: 'POST',
         headers: this.getHeaders(),
@@ -102,10 +100,7 @@ export class WhatsAppService {
           instanceName,
           token: `token_${instanceName}`,
           qrcode: true,
-          integration: 'WHATSAPP-BAILEYS',
-          webhook: webhookUrl,
-          webhookByEvents: false,
-          webhookEvents: ['MESSAGES_UPSERT', 'CONNECTION_UPDATE', 'QRCODE_UPDATED']
+          integration: 'WHATSAPP-BAILEYS'
         })
       });
 
