@@ -112,8 +112,17 @@ export class WhatsAppService {
       const createData = await createResponse.json().catch(() => ({}));
       console.log(`[WhatsAppService] Instance creation check for ${instanceName}:`, createResponse.status, createData);
 
+      // Se a criação já devolveu o QR Code direto
+      const directQr = createData?.qrcode?.base64 || createData?.base64 || createData?.qrcode || createData?.code;
+      if (directQr && typeof directQr === 'string') {
+        await this.prisma.whatsAppInstance.updateMany({
+          where: { instanceName },
+          data: { qrCode: directQr, status: 'CONNECTING' }
+        });
+      }
+
     } catch (err: any) {
-      console.warn(`[WhatsAppService] Instance already exists or Evolution API offline: ${err.message}`);
+      console.warn(`[WhatsAppService] Instance already exists or Evolution API check: ${err.message}`);
     }
 
     // 3. Atualiza estado e retorna status
@@ -168,8 +177,9 @@ export class WhatsAppService {
 
         if (qrRes.ok) {
           const qrData = await qrRes.json();
-          qrCode = qrData?.base64 || qrData?.qrcode?.base64 || qrData?.code || null;
-          if (qrCode) {
+          const extracted = qrData?.base64 || qrData?.qrcode?.base64 || qrData?.qrcode || qrData?.code || qrData?.pairingCode || null;
+          if (extracted && typeof extracted === 'string') {
+            qrCode = extracted;
             status = 'CONNECTING';
           }
         }
