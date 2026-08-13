@@ -7,11 +7,13 @@ import rateLimit from 'express-rate-limit';
 import { PrismaClient } from '@prisma/client';
 import crypto from 'crypto';
 import { NotificationService } from './src/services/NotificationService';
+import { WhatsAppService } from './src/services/WhatsAppService';
 
 const notificationService = new NotificationService();
 
 const app = express();
 const prisma = new PrismaClient();
+const whatsAppService = new WhatsAppService(prisma);
 const PORT = process.env.PORT || 3003;
 const JWT_SECRET = process.env.JWT_SECRET || 'stits-super-secret-key-2026';
 
@@ -232,6 +234,48 @@ app.post('/api/auth/register', async (req, res) => {
   } catch (error) {
     console.error(error);
     res.status(500).json({ error: 'Erro interno do servidor ao registrar usuário' });
+  }
+});
+
+// 1.5.5 Endpoint de Convite / Criação Muta (Managed User)
+app.post('/api/auth/invite', async (req, res) => {
+  try {
+    const { email, name, role } = req.body;
+
+    if (!email || !name) {
+      return res.status(400).json({ error: 'Nome e email são obrigatórios para o convite.' });
+    }
+
+    const existingUser = await prisma.user.findUnique({ where: { email } });
+    if (existingUser) {
+      // Se já existe no hub global, apenas retorna sucesso. O StitsPay irá vinculá-lo localmente.
+      return res.status(200).json({ message: 'Usuário já existe na rede StitsOS.', user: existingUser });
+    }
+
+    // Cria senha aleatória segura
+    const tempPassword = crypto.randomBytes(8).toString('hex');
+    const hashedPassword = await bcrypt.hash(tempPassword, 10);
+
+    const user = await prisma.user.create({
+      data: {
+        name,
+        email,
+        password: hashedPassword,
+        role: role || 'USER'
+      }
+    });
+
+    // Enviar email com a senha temporária (simulado/log para dev)
+    console.log(`[INVITE SSO] Usuário ${email} criado. Senha provisória: ${tempPassword}`);
+    // await notificationService.sendGenericEmail(email, "Bem-vindo à Stits AI", `Sua senha temporária é: ${tempPassword}`, "StitsOS Hub", "noreply@stits.com.br");
+
+    res.status(201).json({
+      message: 'Usuário convidado e criado no StitsOS Hub.',
+      user: { id: user.id, email: user.email, name: user.name }
+    });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ error: 'Erro interno ao processar o convite.' });
   }
 });
 
@@ -556,6 +600,145 @@ app.post('/api/seed', async (req, res) => {
     res.json({ message: 'Banco populado com sucesso! Logins: carlos@novaera.com e ceo@stits.com.br (Senha: 123456)' });
   } catch (error) {
     res.status(500).json({ error: String(error) });
+  }
+});
+
+// ==========================================
+// 4. WHATSAPP MULTI-TENANT & ANTI-BAN HUB
+// ==========================================
+
+// 4.1 Obter ou Inicializar Instância WhatsApp do Tenant
+app.post('/api/whatsapp/instances', authMiddleware, async (req: any, res: any) => {
+  try {
+    const tenantId = req.user.tenantId || req.user.userId;
+    const { appName = 'NEXUS_CRM' } = req.body;
+
+    if (!tenantId) {
+      return res.status(400).json({ error: 'TenantId ou UserId não identificado no token.' });
+    }
+
+    const instanceInfo = await whatsAppService.getOrCreateInstance(tenantId, appName);
+    res.json(instanceInfo);
+  } catch (error: any) {
+    console.error('Erro ao inicializar instância de WhatsApp:', error);
+    res.status(500).json({ error: error.message || 'Erro ao processar instância de WhatsApp.' });
+  }
+});
+
+// 4.2 Consultar Status e QR Code atualizado da Instância
+app.get('/api/whatsapp/instances/:instanceName/status', authMiddleware, async (req: any, res: any) => {
+  try {
+    const { instanceName } = req.params;
+    const statusInfo = await whatsAppService.refreshInstanceStatus(instanceName);
+    res.json(statusInfo);
+  } catch (error: any) {
+    console.error(`Erro ao consultar status da instância ${req.params.instanceName}:`, error);
+    res.status(500).json({ error: error.message || 'Erro ao consultar status da instância.' });
+  }
+});
+
+// 4.3 Desconectar Instância (Logout)
+app.delete('/api/whatsapp/instances/:instanceName', authMiddleware, async (req: any, res: any) => {
+  try {
+    const { instanceName } = req.params;
+    const success = await whatsAppService.logoutInstance(instanceName);
+    res.json({ success, message: success ? 'Instância desconectada com sucesso.' : 'Falha ao desconectar instância.' });
+  } catch (error: any) {
+    console.error(`Erro ao desconectar instância ${req.params.instanceName}:`, error);
+    res.status(500).json({ error: error.message || 'Erro ao desconectar instância.' });
+  }
+});
+
+// 4.4 Disparo Individual com Proteção Anti-Ban (Humano)
+app.post('/api/whatsapp/send', async (req: any, res: any) => {
+  try {
+    const { instanceName, number, text, simulateTyping, minDelayMs, maxDelayMs } = req.body;
+    
+    if (!instanceName || !number || !text) {
+      return res.status(400).json({ error: 'Os campos instanceName, number e text são obrigatórios.' });
+    }
+
+    const result = await whatsAppService.sendWithAntiBan({
+      instanceName,
+      number,
+      text,
+      simulateTyping: simulateTyping !== undefined ? simulateTyping : true,
+      minDelayMs: minDelayMs || 2500,
+      maxDelayMs: maxDelayMs || 5000
+    });
+
+    if (result.success) {
+      res.json(result);
+    } else {
+      res.status(500).json(result);
+    }
+  } catch (error: any) {
+    console.error('Erro no envio protegido de WhatsApp:', error);
+    res.status(500).json({ error: error.message || 'Erro interno no envio de WhatsApp.' });
+  }
+});
+
+// 4.5 Disparo em Lote com Fila e Jitter Anti-Ban
+app.post('/api/whatsapp/send-batch', async (req: any, res: any) => {
+  try {
+    const { instanceName, items, minIntervalSeconds = 20, maxIntervalSeconds = 45 } = req.body;
+
+    if (!instanceName || !Array.isArray(items) || items.length === 0) {
+      return res.status(400).json({ error: 'Envie instanceName e uma lista de items [{ number, text, leadName }] válida.' });
+    }
+
+    // Executa em segundo plano para não dar timeout HTTP
+    whatsAppService.sendBatchWithProtection(
+      instanceName,
+      items,
+      [minIntervalSeconds, maxIntervalSeconds]
+    ).then((summary) => {
+      console.log(`[Batch Finished] Resumo de envio para ${instanceName}:`, summary);
+    }).catch(err => {
+      console.error(`[Batch Error] Erro na fila de envio de ${instanceName}:`, err);
+    });
+
+    res.json({
+      message: 'Fila de disparos com proteção Anti-Ban iniciada com sucesso.',
+      totalItems: items.length,
+      status: 'PROCESSING'
+    });
+
+  } catch (error: any) {
+    console.error('Erro ao iniciar disparo em lote de WhatsApp:', error);
+    res.status(500).json({ error: error.message || 'Erro ao processar lote.' });
+  }
+});
+
+// 4.6 Webhook de Recepção e Roteamento de Mensagens da Evolution API
+app.post('/api/whatsapp/webhook', async (req: any, res: any) => {
+  try {
+    const { event, instance, data } = req.body;
+    const { tenantId, app } = req.query;
+
+    console.log(`📩 [Webhook WhatsApp] Evento '${event}' recebido para a instância '${instance}' (Tenant: ${tenantId || 'global'}, App: ${app || 'NEXUS_CRM'})`);
+
+    // Atualiza status se for evento de conexão
+    if (event === 'connection.update' || event === 'CONNECTION_UPDATE') {
+      const state = data?.state;
+      if (state === 'open') {
+        await prisma.whatsAppInstance.updateMany({
+          where: { instanceName: instance },
+          data: { status: 'CONNECTED', qrCode: null }
+        });
+      } else if (state === 'close') {
+        await prisma.whatsAppInstance.updateMany({
+          where: { instanceName: instance },
+          data: { status: 'DISCONNECTED' }
+        });
+      }
+    }
+
+    // Retorna 200 rápido para a Evolution API
+    res.status(200).json({ received: true });
+  } catch (error) {
+    console.error('Erro ao processar webhook do WhatsApp:', error);
+    res.status(200).json({ received: false });
   }
 });
 

@@ -16,8 +16,25 @@ model Tenant {
   status    String   @default("Ativo")
   createdAt DateTime @default(now())
 
-  users     User[]
-  apps      TenantApp[]
+  users             User[]
+  apps              TenantApp[]
+  whatsappInstances WhatsAppInstance[]
+}
+
+model WhatsAppInstance {
+  id           String    @id @default(uuid())
+  tenantId     String
+  appName      String    @default("NEXUS_CRM") // 'NEXUS_CRM', 'BUSCA_LEADS', 'STITSSIGN', 'GLOBAL'
+  instanceName String    @unique
+  phoneNumber  String?
+  profileName  String?
+  profilePic   String?
+  status       String    @default("DISCONNECTED") // 'DISCONNECTED', 'CONNECTING', 'CONNECTED'
+  qrCode       String?   @db.Text
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+
+  tenant       Tenant    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
 }
 
 model User {
