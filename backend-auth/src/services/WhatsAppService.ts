@@ -126,24 +126,25 @@ export class WhatsAppService {
       });
     }
 
-    // 2. Tenta criar na Evolution API (caso ainda não exista lá)
+    // 2. Tenta criar na Evolution API via STITS GATEWAY (para registrar no proxy e webhooks)
+    const gatewayUrl = process.env.GATEWAY_URL || 'http://127.0.0.1:3016';
     try {
-      const createResponse = await fetch(`${this.evoUrl}/instance/create`, {
+      const createResponse = await fetch(`${gatewayUrl}/api/whatsapp/instances`, {
         method: 'POST',
-        headers: this.getHeaders(),
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           instanceName,
-          token: `token_${instanceName}`,
-          qrcode: true,
-          integration: 'WHATSAPP-BAILEYS'
+          ownerApp: appName,
+          tenantId: validTenantId,
+          callbackUrl: this.webhookBaseUrl
         })
       });
 
       const createData = await createResponse.json().catch(() => ({}));
-      console.log(`[WhatsAppService] Instance creation check for ${instanceName}:`, createResponse.status, createData);
+      console.log(`[WhatsAppService] Gateway instance creation check for ${instanceName}:`, createResponse.status, createData);
 
-      // Se a criação já devolveu o QR Code direto
-      const directQr = createData?.qrcode?.base64 || createData?.base64 || createData?.qrcode || createData?.code;
+      // Se a criação devolveu o QR Code direto (o Gateway devolve no campo "qr")
+      const directQr = createData?.qr;
       if (directQr && typeof directQr === 'string') {
         await this.prisma.whatsAppInstance.updateMany({
           where: { instanceName },
@@ -152,7 +153,7 @@ export class WhatsAppService {
       }
 
     } catch (err: any) {
-      console.warn(`[WhatsAppService] Instance already exists or Evolution API check: ${err.message}`);
+      console.warn(`[WhatsAppService] Gateway check failed: ${err.message}`);
     }
 
     // 3. Atualiza estado e retorna status
