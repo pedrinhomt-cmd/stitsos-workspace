@@ -639,7 +639,7 @@ app.post('/api/checkout/stitspay', async (req, res) => {
     }
 
     // Fazer a chamada para a API do StitsPay
-    const stitsPayResponse = await fetch('https://stitspay.vamplayer.com.br/api/payment/links', {
+    const stitsPayResponse = await fetch('https://stitspay.vamplayer.com.br/api/payments/links', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
