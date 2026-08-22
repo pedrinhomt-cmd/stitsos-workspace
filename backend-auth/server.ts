@@ -673,13 +673,12 @@ app.post('/api/checkout/stitspay', async (req, res) => {
 // Webhook do StitsPay para o Imoblink
 app.post('/api/webhooks/stitspay', async (req, res) => {
   try {
-    const { event, transaction_id, mp_payment_id, amount } = req.body;
+    const { event, transaction_id, mp_payment_id, amount, description } = req.body;
     console.log(`[Webhook StitsPay recebido no SSO] Evento: ${event}`);
 
     res.status(200).json({ received: true });
 
     if (event === 'payment.approved') {
-      // Validar a assinatura (Omitido para simplificar, já que a API do Supabase tem RLS, mas como usamos Service Role Key ignoramos RLS)
       const supabaseUrl = process.env.SUPABASE_URL;
       const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
 
@@ -690,12 +689,67 @@ app.post('/api/webhooks/stitspay', async (req, res) => {
 
       const supabase = createClient(supabaseUrl, supabaseKey);
 
-      // Vamos buscar o companyId e o planId baseado no transaction_id ou simplesmente assumir que foi pago.
-      // Em uma implementação real, nós salvaríamos o transaction_id atrelado ao companyId antes.
-      // Como a branch do StitsPay envia o webhook, ele pertence à conta da filial Imoblink!
+      let companyId = null;
+      let planId = null;
+
+      if (description) {
+        const parts = description.split('|');
+        parts.forEach((p: string) => {
+          const [k, v] = p.split(':');
+          if (k === 'company_id') companyId = v;
+          if (k === 'plan_id') planId = v;
+        });
+      }
+
+      if (!companyId || !planId) {
+        console.error('Webhook payload não possui description com companyId e planId');
+        return;
+      }
+
+      console.log(`[Imoblink CRM] Atualizando empresa ${companyId} para plano ${planId}`);
       
-      console.log(`[Imoblink CRM] Pagamento ${mp_payment_id} aprovado. Precisamos implementar o link transaction_id -> company_id.`);
-      // O ideal é que na criação do link, tivéssemos passado um Webhook Metadata, ou lido as notes.
+      const { data: updateData, error: updateError } = await supabase
+        .from('companies')
+        .update({ subscription_plan: planId })
+        .eq('id', companyId)
+        .select()
+        .single();
+        
+      if (updateError) {
+        console.error('Erro ao atualizar plano no Supabase:', updateError.message);
+        return;
+      }
+
+      // Buscar o gestor para mandar o e-mail de boas-vindas
+      const { data: users, error: userError } = await supabase
+        .from('users')
+        .select('email, full_name')
+        .eq('company_id', companyId)
+        .eq('role', 'gestor')
+        .limit(1);
+
+      if (users && users.length > 0) {
+        const owner = users[0];
+        const emailHtml = `
+          <div style="font-family: sans-serif; max-width: 600px; margin: 0 auto; color: #333;">
+            <h2 style="color: #4F46E5;">Parabéns, ${owner.full_name || 'Corretor'}! 🎉</h2>
+            <p>O seu pagamento foi aprovado e o plano da sua imobiliária no Imoblink CRM foi atualizado para <strong>${planId.toUpperCase()}</strong>!</p>
+            <p>A partir de agora você já pode aproveitar todas as funcionalidades exclusivas para acelerar suas vendas.</p>
+            <br/>
+            <p>Se tiver qualquer dúvida ou precisar de ajuda, basta nos responder este e-mail.</p>
+            <p>Forte abraço,<br/>Equipe Imoblink CRM</p>
+          </div>
+        `;
+        
+        await notificationService.sendGenericEmail(
+          owner.email,
+          'Seu plano Imoblink foi atualizado com sucesso! 🚀',
+          emailHtml,
+          'Imoblink CRM',
+          'suporte@imoblink.com.br'
+        );
+        console.log(`[Webhook] E-mail de boas vindas enviado para ${owner.email}`);
+      }
     }
   } catch (err: any) {
     console.error('Erro ao processar Webhook do StitsPay no SSO', err);
