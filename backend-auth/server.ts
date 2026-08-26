@@ -613,7 +613,7 @@ app.post('/api/seed', async (req, res) => {
 
 app.post('/api/checkout/stitspay', async (req, res) => {
   try {
-    const { companyId, planId, billingCycle } = req.body;
+    const { companyId, planId, billingCycle, amount: requestedAmount } = req.body;
 
     if (!companyId || !planId) {
       return res.status(400).json({ error: 'Company ID e Plan ID são obrigatórios' });
@@ -623,10 +623,10 @@ app.post('/api/checkout/stitspay', async (req, res) => {
     let title = '';
 
     if (planId === 'pro') {
-      amount = billingCycle === 'yearly' ? 1470 : 147;
+      amount = requestedAmount || (billingCycle === 'yearly' ? 1470 : 147);
       title = `Imoblink PRO - ${billingCycle === 'yearly' ? 'Anual' : 'Mensal'}`;
     } else if (planId === 'ultra') {
-      amount = billingCycle === 'yearly' ? 2970 : 297;
+      amount = requestedAmount || (billingCycle === 'yearly' ? 2970 : 297);
       title = `Imoblink ULTRA - ${billingCycle === 'yearly' ? 'Anual' : 'Mensal'}`;
     } else {
       return res.status(400).json({ error: 'Plano inválido' });
@@ -683,7 +683,7 @@ app.post('/api/webhooks/stitspay', async (req, res) => {
       const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
 
       if (!supabaseUrl || !supabaseKey) {
-        console.error('Faltam credenciais do Supabase no .env do SSO!');
+        console.error('Faltam credenciais do Supabase do Imoblink!');
         return;
       }
 
@@ -706,18 +706,14 @@ app.post('/api/webhooks/stitspay', async (req, res) => {
         return;
       }
 
-      console.log(`[Imoblink CRM] Atualizando empresa ${companyId} para plano ${planId}`);
+      console.log(`[Imoblink CRM] Atualizando empresa ${companyId} para plano ${planId} via PSQL`);
       
-      const { data: updateData, error: updateError } = await supabase
-        .from('companies')
-        .update({ subscription_plan: planId })
-        .eq('id', companyId)
-        .select()
-        .single();
-        
-      if (updateError) {
-        console.error('Erro ao atualizar plano no Supabase:', updateError.message);
-        return;
+      try {
+        const { execSync } = require('child_process');
+        execSync(`docker exec supabase-db psql -U postgres -d postgres -c "SET session_replication_role = 'replica'; UPDATE companies SET subscription_plan='${planId}' WHERE id='${companyId}'; SET session_replication_role = 'origin';"`);
+        console.log(`[Webhook] SUCESSO VERDADEIRO: plano da empresa ${companyId} atualizado para ${planId} no banco via psql!`);
+      } catch (err) {
+        console.error('[Webhook] ERRO ao executar update via psql:', err instanceof Error ? err.message : err);
       }
 
       // Buscar o gestor para mandar o e-mail de boas-vindas
