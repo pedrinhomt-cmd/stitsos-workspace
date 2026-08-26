@@ -746,8 +746,8 @@ app.post('/api/webhooks/stitspay', async (req, res) => {
 
       const supabase = createClient(supabaseUrl, supabaseKey);
 
-      let companyId = null;
-      let planId = null;
+      let companyId: string | null = null;
+      let planId: string | null = null;
 
       if (description) {
         const parts = description.split('|');
