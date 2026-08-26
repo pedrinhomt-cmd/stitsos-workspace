@@ -38,9 +38,10 @@ app.post('/api/auth/login', loginLimiter, async (req, res) => {
   try {
     const email = req.body.email?.trim();
     const password = req.body.password?.trim();
+    const source = req.body.source?.trim();
     
     // Busca usuário e inclui o tenant e os apps que ele tem acesso
-    const user = await prisma.user.findUnique({
+    let user = await prisma.user.findUnique({
       where: { email },
       include: {
         tenant: {
@@ -60,6 +61,57 @@ app.post('/api/auth/login', loginLimiter, async (req, res) => {
     const validPassword = await bcrypt.compare(password, user.password);
     if (!validPassword) {
       return res.status(401).json({ error: 'Credenciais inválidas' });
+    }
+
+    // Auto-provisionamento: Se o usuário não tem Tenant (órfão), cria um agora.
+    if (!user.tenantId || !user.tenant) {
+      const tenantName = `Empresa de ${user.name.split(' ')[0]}`;
+      const newTenant = await prisma.tenant.create({
+        data: {
+          name: tenantName,
+          docType: 'AUTO',
+          doc: `AUTO_${Date.now()}_${Math.floor(Math.random()*1000)}`,
+          plan: 'Gratuito',
+          status: 'Ativo'
+        },
+        include: {
+          apps: { include: { app: true } }
+        }
+      });
+      await prisma.user.update({
+        where: { id: user.id },
+        data: { tenantId: newTenant.id }
+      });
+      user = { ...user, tenantId: newTenant.id, tenant: newTenant };
+      console.log(`[AUTO-PROVISION LOGIN] Tenant '${tenantName}' criado para usuário legado ${user.email}`);
+    }
+
+    // Auto-contratação: Se veio de uma 'source' (app), garante que a empresa tem acesso
+    if (source && source !== 'SSO_PORTAL' && user.tenantId) {
+      const targetApp = await prisma.app.findFirst({
+        where: { name: { equals: source, mode: 'insensitive' } }
+      });
+      
+      if (targetApp) {
+        const hasApp = user.tenant!.apps?.some(ta => ta.appId === targetApp.id);
+        if (!hasApp) {
+          await prisma.tenantApp.create({
+            data: {
+              tenantId: user.tenantId,
+              appId: targetApp.id
+            }
+          });
+          console.log(`[AUTO-CONTRACT LOGIN] Empresa '${user.tenant!.name}' agora tem acesso a '${targetApp.name}'`);
+          // Recarregar os apps
+          const updatedTenant = await prisma.tenant.findUnique({
+            where: { id: user.tenantId },
+            include: { apps: { include: { app: true } } }
+          });
+          if (updatedTenant) {
+            user.tenant = updatedTenant as any;
+          }
+        }
+      }
     }
 
     let accessibleApps: string[] = [];
@@ -569,7 +621,17 @@ app.get('/api/admin/users', authMiddleware, async (req: any, res: any) => {
         tenantId: true,
         createdAt: true,
         tenant: {
-          select: { name: true }
+          select: { 
+            name: true,
+            plan: true,
+            apps: {
+              include: {
+                app: {
+                  select: { name: true }
+                }
+              }
+            }
+          }
         }
       },
       orderBy: { createdAt: 'desc' }
@@ -751,11 +813,11 @@ app.post('/api/webhooks/stitspay', async (req, res) => {
 
       if (description) {
         const parts = description.split('|');
-        parts.forEach((p: string) => {
+        for (const p of parts) {
           const [k, v] = p.split(':');
           if (k === 'company_id') companyId = v;
           if (k === 'plan_id') planId = v;
-        });
+        }
       }
 
       if (!companyId || !planId) {
