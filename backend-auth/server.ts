@@ -578,6 +578,76 @@ app.put('/api/apps/:id', authMiddleware, async (req: any, res: any) => {
     res.status(500).json({ error: 'Erro ao atualizar aplicativo' });
   }
 });
+// 2. Rota de Métricas (Dashboard CEO)
+app.get('/api/admin/metrics', authMiddleware, async (req: any, res: any) => {
+  if (req.user.role !== 'CEO' && req.user.email !== 'ceo@stits.com.br') {
+    return res.status(403).json({ error: 'Acesso negado' });
+  }
+
+  try {
+    const totalUsers = await prisma.user.count();
+    const totalTenants = await prisma.tenant.count();
+    const totalAppsContracted = await prisma.tenantApp.count();
+
+    const apps = await prisma.app.findMany({
+      include: {
+        _count: {
+          select: { tenants: true }
+        }
+      }
+    });
+    
+    const appDistribution = apps.map(app => ({
+      name: app.name,
+      count: app._count.tenants
+    })).sort((a, b) => b.count - a.count);
+
+    const allUsers = await prisma.user.findMany({
+      select: { createdAt: true },
+      orderBy: { createdAt: 'asc' }
+    });
+
+    const growthMap: Record<string, number> = {};
+    let cumulative = 0;
+    
+    // Group users by month and keep a cumulative count
+    allUsers.forEach(u => {
+      const date = new Date(u.createdAt);
+      // 'pt-BR' pode dar problema no Node se a flag ICU não estiver ativada.
+      // Usaremos um fallback manual simples.
+      const months = ['Jan', 'Fev', 'Mar', 'Abr', 'Mai', 'Jun', 'Jul', 'Ago', 'Set', 'Out', 'Nov', 'Dez'];
+      const monthYear = `${months[date.getMonth()]}/${date.getFullYear()}`;
+      
+      cumulative += 1;
+      growthMap[monthYear] = cumulative;
+    });
+
+    const userGrowth = Object.entries(growthMap).map(([month, count]) => ({
+      month,
+      users: count
+    })).slice(-6); // Últimos 6 meses de atividade
+
+    const recentUsers = await prisma.user.findMany({
+      take: 5,
+      orderBy: { createdAt: 'desc' },
+      select: { id: true, name: true, email: true, createdAt: true, role: true }
+    });
+
+    res.json({
+      metrics: {
+        totalUsers,
+        totalTenants,
+        totalAppsContracted
+      },
+      userGrowth,
+      appDistribution,
+      recentUsers
+    });
+  } catch (error) {
+    console.error('Erro ao buscar métricas:', error);
+    res.status(500).json({ error: 'Erro ao buscar métricas' });
+  }
+});
 
 // 2. Rota para o CEO listar todos os Tenants (Dashboard Administrativo)
 app.get('/api/tenants', authMiddleware, async (req: any, res: any) => {
