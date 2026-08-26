@@ -359,10 +359,20 @@ const authMiddleware = (req: any, res: any, next: any) => {
 app.put('/api/auth/password', authMiddleware, async (req: any, res: any) => {
   try {
     const userId = req.user.userId;
-    const { newPassword } = req.body;
+    const { currentPassword, newPassword } = req.body;
     
-    if (!newPassword || newPassword.length < 6) {
-      return res.status(400).json({ error: 'A nova senha deve ter no mínimo 6 caracteres.' });
+    if (!currentPassword || !newPassword || newPassword.length < 6) {
+      return res.status(400).json({ error: 'A nova senha deve ter no mínimo 6 caracteres e a senha atual é obrigatória.' });
+    }
+
+    const user = await prisma.user.findUnique({ where: { id: userId } });
+    if (!user) {
+      return res.status(404).json({ error: 'Usuário não encontrado.' });
+    }
+
+    const validPassword = await bcrypt.compare(currentPassword, user.password);
+    if (!validPassword) {
+      return res.status(401).json({ error: 'Senha atual incorreta.' });
     }
 
     const hashedPassword = await bcrypt.hash(newPassword, 10);
