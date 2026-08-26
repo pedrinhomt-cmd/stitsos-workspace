@@ -553,6 +553,63 @@ app.get('/api/tenants', authMiddleware, async (req: any, res: any) => {
   res.json(formatted);
 });
 
+// 2.1 Rotas de Gerenciamento de Usuários (SSO Admin)
+app.get('/api/admin/users', authMiddleware, async (req: any, res: any) => {
+  if (req.user.role !== 'CEO' && req.user.email !== 'ceo@stits.com.br') {
+    return res.status(403).json({ error: 'Acesso negado' });
+  }
+  try {
+    const users = await prisma.user.findMany({
+      select: {
+        id: true,
+        name: true,
+        email: true,
+        whatsapp: true,
+        role: true,
+        tenantId: true,
+        createdAt: true,
+        tenant: {
+          select: { name: true }
+        }
+      },
+      orderBy: { createdAt: 'desc' }
+    });
+    res.json(users);
+  } catch (error) {
+    res.status(500).json({ error: 'Erro ao buscar usuários' });
+  }
+});
+
+app.put('/api/admin/users/:id', authMiddleware, async (req: any, res: any) => {
+  if (req.user.role !== 'CEO' && req.user.email !== 'ceo@stits.com.br') {
+    return res.status(403).json({ error: 'Acesso negado' });
+  }
+  try {
+    const { role, name, email, whatsapp } = req.body;
+    const updatedUser = await prisma.user.update({
+      where: { id: req.params.id },
+      data: { role, name, email, whatsapp }
+    });
+    res.json(updatedUser);
+  } catch (error) {
+    res.status(500).json({ error: 'Erro ao atualizar usuário' });
+  }
+});
+
+app.delete('/api/admin/users/:id', authMiddleware, async (req: any, res: any) => {
+  if (req.user.role !== 'CEO' && req.user.email !== 'ceo@stits.com.br') {
+    return res.status(403).json({ error: 'Acesso negado' });
+  }
+  try {
+    await prisma.user.delete({
+      where: { id: req.params.id }
+    });
+    res.json({ success: true, message: 'Usuário deletado com sucesso.' });
+  } catch (error) {
+    res.status(500).json({ error: 'Erro ao deletar usuário' });
+  }
+});
+
 // 3. Rota de Seed (Apenas para criar os dados iniciais do banco!)
 app.post('/api/seed', async (req, res) => {
   try {
