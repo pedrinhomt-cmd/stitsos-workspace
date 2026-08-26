@@ -648,7 +648,7 @@ app.post('/api/checkout/stitspay', async (req, res) => {
       body: JSON.stringify({
         title,
         amount,
-        description: `company_id:${companyId}|plan_id:${planId}|cycle:${billingCycle}`,
+        description: `company_id:${companyId}|plan_id:${planId}|cycle:${billingCycle}|return_url:${req.body.successUrl || ''}`,
       }),
     });
 
