@@ -45,6 +45,8 @@ model User {
   recoveryEmail     String?   @unique
   password          String
   role              String    @default("USER") // 'CEO', 'ADMIN', 'USER'
+  jobTitle          String?
+  photoUrl          String?   @db.Text
   tenantId          String?
   resetToken        String?   @unique
   resetTokenExpires DateTime?

@@ -24,7 +24,7 @@ app.use(cors({
   allowedHeaders: ['Content-Type', 'Authorization']
 }));
 // Preflight handled globally by app.use(cors()) above
-app.use(express.json());
+app.use(express.json({ limit: '10mb' }));
 
 // Limite de Requisições (Anti Brute-Force)
 const loginLimiter = rateLimit({
@@ -155,6 +155,9 @@ app.post('/api/auth/login', loginLimiter, async (req, res) => {
         id: user.id,
         name: user.name,
         email: user.email,
+        whatsapp: user.whatsapp,
+        jobTitle: user.jobTitle,
+        photoUrl: user.photoUrl,
         role: user.role,
         tenant: user.tenant ? {
           name: user.tenant.name,
@@ -273,6 +276,9 @@ app.post('/api/auth/register', async (req, res) => {
         id: user.id,
         name: user.name,
         email: user.email,
+        whatsapp: user.whatsapp,
+        jobTitle: user.jobTitle,
+        photoUrl: user.photoUrl,
         role: user.role,
         tenant: user.tenant ? {
           name: user.tenant.name,
@@ -578,6 +584,72 @@ app.put('/api/apps/:id', authMiddleware, async (req: any, res: any) => {
     res.status(500).json({ error: 'Erro ao atualizar aplicativo' });
   }
 });
+// ==========================================
+// ROTA DE PERFIL DO USUÁRIO
+// ==========================================
+
+app.get('/api/user/profile', authMiddleware, async (req: any, res: any) => {
+  try {
+    const user = await prisma.user.findUnique({
+      where: { id: req.user.userId },
+      select: {
+        id: true,
+        name: true,
+        email: true,
+        whatsapp: true,
+        jobTitle: true,
+        photoUrl: true,
+        role: true,
+        createdAt: true,
+      }
+    });
+
+    if (!user) {
+      return res.status(404).json({ error: 'Usuário não encontrado' });
+    }
+
+    res.json(user);
+  } catch (error) {
+    console.error('Erro ao buscar perfil:', error);
+    res.status(500).json({ error: 'Erro ao buscar perfil' });
+  }
+});
+
+// Aumentando limite do express json caso o Base64 seja grande
+app.put('/api/user/profile', authMiddleware, async (req: any, res: any) => {
+  try {
+    const { name, whatsapp, jobTitle, photoUrl } = req.body;
+    
+    if (!name) {
+      return res.status(400).json({ error: 'Nome é obrigatório.' });
+    }
+
+    const updatedUser = await prisma.user.update({
+      where: { id: req.user.userId },
+      data: {
+        name,
+        whatsapp,
+        jobTitle,
+        photoUrl
+      },
+      select: {
+        id: true,
+        name: true,
+        email: true,
+        whatsapp: true,
+        jobTitle: true,
+        photoUrl: true,
+        role: true,
+      }
+    });
+
+    res.json(updatedUser);
+  } catch (error) {
+    console.error('Erro ao atualizar perfil:', error);
+    res.status(500).json({ error: 'Erro ao atualizar perfil' });
+  }
+});
+
 // 2. Rota de Métricas (Dashboard CEO)
 app.get('/api/admin/metrics', authMiddleware, async (req: any, res: any) => {
   if (req.user.role !== 'CEO' && req.user.email !== 'ceo@stits.com.br') {
