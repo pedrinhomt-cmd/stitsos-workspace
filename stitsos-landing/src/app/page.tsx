@@ -13,7 +13,7 @@ export default function Home() {
             <span style={{ fontSize: "1.5rem" }}>⚙️</span> StitsOS
           </div>
           <div>
-            <a href="http://localhost:5176" className="btn btn-secondary" style={{ padding: "8px 16px", fontSize: "0.9rem" }}>
+            <a href="https://stitsos.fidycard.com.br" className="btn btn-secondary" style={{ padding: "8px 16px", fontSize: "0.9rem" }}>
               Developer Login
             </a>
           </div>
@@ -32,7 +32,7 @@ export default function Home() {
             StitsOS é o hub central de arquitetura, identidade e integração para todos os sistemas da Holding. Conectando o StitsPay, ZennTec, BlogSmart e muito mais.
           </p>
           <div className="hero-actions">
-            <a href="http://localhost:5176" className="btn btn-primary">
+            <a href="https://stitsos.fidycard.com.br" className="btn btn-primary">
               Acessar SSO Hub ➔
             </a>
             <a href="#features" className="btn btn-secondary">
@@ -217,7 +217,7 @@ export default function Home() {
                     <p style={{ color: "var(--text-dim)", marginBottom: "24px" }}>
                       Segurança de nível bancário nativa. O sistema gerencia hierarquias complexas para parceiros B2B, garantindo que franqueados do Stits Zyon acessem apenas suas máquinas, enquanto diretores visualizam o mapa global.
                     </p>
-                    <a href="http://localhost:5176" className="btn btn-secondary">Acessar Painel de Controle</a>
+                    <a href="https://stitsos.fidycard.com.br" className="btn btn-secondary">Acessar Painel de Controle</a>
                   </div>
                   <div style={{ flex: "1 1 400px", textAlign: "center" }}>
                     <div style={{ fontSize: "5rem", opacity: 0.8 }}>🔐</div>
